@@ -17,13 +17,11 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text;
-using NLog;
 
 
 #pragma warning disable 1591 // Disable XML documentation warnings
 
-namespace MediaInfoLib
+namespace MediaInfoWrapper
 {
     public enum StreamKind
     {
@@ -73,10 +71,8 @@ namespace MediaInfoLib
         Finalized = 0x08,
     }
 
-    public class MediaInfo : IDisposable
+    public class MediaInfoDLL : IDisposable
     {
-        private readonly Logger logger = LogManager.GetCurrentClassLogger();
-
         #region SHOKO
 
         [Flags]
@@ -96,8 +92,6 @@ namespace MediaInfoLib
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool FreeLibrary(IntPtr hModule);
-
-        private static readonly Logger Logger = NLog.LogManager.GetCurrentClassLogger();
 
         private static System.IntPtr moduleHandle = IntPtr.Zero;
         private static System.IntPtr curlHandle = IntPtr.Zero;
@@ -181,13 +175,13 @@ namespace MediaInfoLib
         private static extern IntPtr MediaInfo_Count_Get(IntPtr Handle, IntPtr StreamKind, IntPtr StreamNumber);
 
         //MediaInfo class
-        public MediaInfo()
+        public MediaInfoDLL()
         {
             #region Shoko
 
-            if ((Handle == IntPtr.Zero) && !Shoko.Server.Utils.IsRunningOnMono())
+            if ((Handle == IntPtr.Zero) && !IsRunningOnMono())
             {
-                string fullexepath = System.Reflection.Assembly.GetEntryAssembly().Location;
+                string fullexepath = System.Reflection.Assembly.GetEntryAssembly()?.Location;
                 if (!string.IsNullOrEmpty(fullexepath))
                 {
                     FileInfo fi = new FileInfo(fullexepath);
@@ -195,8 +189,6 @@ namespace MediaInfoLib
                         "MediaInfo.dll");
                     string curlpath = Path.Combine(fi.Directory.FullName, Environment.Is64BitProcess ? "x64" : "x86",
                         "libcurl.dll");
-
-                    Logger.Info("Using MediaInfo at: {0}", fullexepath);
 
                     moduleHandle = LoadLibraryEx(fullexepath, IntPtr.Zero, 0);
                     curlHandle = LoadLibraryEx(curlpath, IntPtr.Zero, 0);
@@ -212,7 +204,6 @@ namespace MediaInfoLib
             }
             catch (Exception ex)
             {
-                logger.Error($"Unable to initialize MediaInfo: {ex}");
                 Handle = (IntPtr) 0;
             }
             if (Environment.OSVersion.ToString().IndexOf("Windows", StringComparison.OrdinalIgnoreCase) == -1)
@@ -221,7 +212,7 @@ namespace MediaInfoLib
                 MustUseAnsi = false;
         }
 
-        ~MediaInfo()
+        ~MediaInfoDLL()
         {
             if (Handle == (IntPtr) 0) return;
             MediaInfo_Delete(Handle);
@@ -246,7 +237,7 @@ namespace MediaInfoLib
         {
             #region Shoko
 
-            if (!Shoko.Server.Utils.IsLinux)
+            if (!IsLinux)
                 FileName = FileName.StartsWith(@"\\")
                     ? FileName
                     : @"\\?\" + FileName; // add long path prefix if not running on linux, and not a unc path.
@@ -403,5 +394,16 @@ namespace MediaInfoLib
             }
             GC.SuppressFinalize(this);
         }
+        
+        public static bool IsLinux
+        {
+            get
+            {
+                int p = (int)Environment.OSVersion.Platform;
+                return (p == 4) || (p == 6) || (p == 128);
+            }
+        }
+
+        public static bool IsRunningOnMono() => Type.GetType("Mono.Runtime") != null;
     }
 }
